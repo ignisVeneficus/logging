@@ -31,6 +31,7 @@ const (
 	FieldParams       string = "params"
 	FieldDuration     string = "duration"
 	FieldParentSpanID string = "parent_span_id"
+	FieldAnchor       string = "anchor"
 )
 
 // LogContextName is the context.Context key used to store and retrieve
@@ -43,14 +44,16 @@ type LogScope struct {
 }
 
 type LogContext struct {
-	TraceID string
-	SpanID  string
+	TraceID      string
+	SpanID       string
+	ParentSpanID string
 }
 
 func (lc LogContext) Next(spanId string) LogContext {
 	return LogContext{
-		TraceID: lc.TraceID,
-		SpanID:  spanId,
+		TraceID:      lc.TraceID,
+		SpanID:       spanId,
+		ParentSpanID: lc.SpanID,
 	}
 }
 
@@ -90,10 +93,11 @@ func newTraceID() string {
 	}
 }
 
-func EmptyLogContext() LogContext {
+func RootLogContext() LogContext {
 	return LogContext{
-		TraceID: newTraceID(),
-		SpanID:  "",
+		TraceID:      newTraceID(),
+		SpanID:       "",
+		ParentSpanID: "",
 	}
 }
 
@@ -102,13 +106,28 @@ func EmptyLogContext() LogContext {
 func fromCtx(ctx context.Context) LogContext {
 
 	if ctx == nil {
-		return EmptyLogContext()
+		return RootLogContext()
 	}
 	v := ctx.Value(LogContextName)
 	if v == nil {
-		return EmptyLogContext()
+		return RootLogContext()
 	}
-	return v.(LogContext)
+	lc, ok := v.(LogContext)
+	if !ok {
+		return RootLogContext()
+	}
+	return lc
+}
+
+func Detach(ctx context.Context) context.Context {
+	out := context.Background()
+
+	logContext := ctx.Value(LogContextName)
+	if logContext == nil {
+		logContext = RootLogContext()
+	}
+	return context.WithValue(out, LogContextName, logContext)
+
 }
 
 // AddParams populates the FieldParams log field from the provided parameter map.
@@ -140,7 +159,7 @@ func AddParams(e *zerolog.Event, level zerolog.Level, params map[string]any) {
 // at debug or trace log levels.
 //
 // It returns a span-bound logger for subsequent logging within the function.
-func Enter(ctx context.Context, scopeName string, params map[string]any) (LogScope, context.Context) {
+func Enter(ctx context.Context, scopeName string, anchor any, params map[string]any) (LogScope, context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -155,7 +174,9 @@ func Enter(ctx context.Context, scopeName string, params map[string]any) (LogSco
 		Str(FieldTraceID, logContext.TraceID).
 		Str(FieldParentSpanID, logContext.SpanID).
 		Str(FieldScope, scopeName).
-		Str(FieldSpanID, spanID)
+		Str(FieldSpanID, spanID).
+		Any(FieldAnchor, anchor)
+
 	l := w.Logger()
 	level := globalConfig.Load().resolveLevel(scopeName)
 	if level != nil {
@@ -168,6 +189,38 @@ func Enter(ctx context.Context, scopeName string, params map[string]any) (LogSco
 	e.Msg("")
 	logContext = logContext.Next(spanID)
 	ctx = context.WithValue(ctx, LogContextName, logContext)
+
+	return LogScope{
+		Log:   l,
+		Start: start,
+	}, ctx
+}
+
+func EnterWithCtx(ctx context.Context, scopeName string, anchor any, params map[string]any) (LogScope, context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	start := time.Now()
+	logContext := fromCtx(ctx)
+
+	logg := log.Logger
+	w := logg.With().
+		Str(FieldTraceID, logContext.TraceID).
+		Str(FieldParentSpanID, logContext.ParentSpanID).
+		Str(FieldScope, scopeName).
+		Str(FieldSpanID, logContext.SpanID).
+		Any(FieldAnchor, anchor)
+	l := w.Logger()
+	level := globalConfig.Load().resolveLevel(scopeName)
+	if level != nil {
+		l = l.Level(*level)
+	}
+	e := l.Debug().Str(FieldEvent, "enter")
+	if params != nil {
+		AddParams(e, *level, params)
+	}
+	e.Msg("")
 
 	return LogScope{
 		Log:   l,
@@ -250,7 +303,15 @@ func Debug(scope LogScope, event string, params map[string]any) {
 		AddParams(e, logg.GetLevel(), params)
 	}
 	e.Msg("")
-
+}
+func Trace(scope LogScope, event string, params map[string]any) {
+	logg := scope.Log
+	e := logg.Trace().
+		Str(FieldEvent, event)
+	if params != nil {
+		AddParams(e, logg.GetLevel(), params)
+	}
+	e.Msg("")
 }
 func Info(scope LogScope, event string, params map[string]any) {
 	logg := scope.Log
@@ -269,6 +330,30 @@ func Warn(scope LogScope, event string, params map[string]any) {
 		AddParams(e, logg.GetLevel(), params)
 	}
 	e.Msg("")
+}
+func Fatal(scope LogScope, event string, params map[string]any, err error, msg string) {
+	logg := scope.Log
+	e := logg.Fatal().
+		Str(FieldEvent, event)
+	if params != nil {
+		AddParams(e, logg.GetLevel(), params)
+	}
+	if err != nil {
+		e.Err(err)
+	}
+	e.Msg(msg)
+}
+func Panic(scope LogScope, event string, params map[string]any, err error, msg string) {
+	logg := scope.Log
+	e := logg.Panic().
+		Str(FieldEvent, event)
+	if params != nil {
+		AddParams(e, logg.GetLevel(), params)
+	}
+	if err != nil {
+		e.Err(err)
+	}
+	e.Msg(msg)
 }
 
 // Return logs the function exit status using the appropriate exit helper
