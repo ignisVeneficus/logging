@@ -181,6 +181,9 @@ func Enter(ctx context.Context, scopeName string, anchor any, params map[string]
 	level := globalConfig.Load().resolveLevel(scopeName)
 	if level != nil {
 		l = l.Level(*level)
+	} else {
+		le := zerolog.DebugLevel
+		level = &le
 	}
 	e := l.Debug().Str(FieldEvent, "enter")
 	if params != nil {
@@ -414,5 +417,7 @@ func LoadLogging(file string) {
 		panic(err)
 	}
 	log.Logger = *logger
+
+	Configure(cfg)
 
 }
