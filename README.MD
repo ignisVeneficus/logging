@@ -497,9 +497,9 @@ This functionality is fully standalone and can also be used directly with the or
 
 Example standalone usage:
 
-===go
+```go
 d.Object(label, WithLevel(level, struct))
-===
+```
 
 This allows level-aware object serialization in any zerolog event pipeline.
 
