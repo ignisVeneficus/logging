@@ -166,6 +166,9 @@ func Enter(ctx context.Context, scopeName string, anchor any, params map[string]
 
 	start := time.Now()
 	logContext := fromCtx(ctx)
+	if logContext == (LogContext{}) {
+		logContext = RootLogContext()
+	}
 
 	spanID := newSpanID()
 
@@ -206,6 +209,9 @@ func EnterWithCtx(ctx context.Context, scopeName string, anchor any, params map[
 
 	start := time.Now()
 	logContext := fromCtx(ctx)
+	if logContext == (LogContext{}) {
+		logContext = RootLogContext()
+	}
 
 	logg := log.Logger
 	w := logg.With().

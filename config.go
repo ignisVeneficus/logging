@@ -68,6 +68,7 @@ func Configure(cfg LoggingConfig) {
 
 	for k, v := range cfg.Loggers {
 		level, err := zerolog.ParseLevel(v)
+
 		if err != nil {
 			log.Logger.Error().Str("level", v).Err(err).Msg("invalid level")
 			continue
