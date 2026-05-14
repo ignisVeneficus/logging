@@ -224,6 +224,9 @@ func EnterWithCtx(ctx context.Context, scopeName string, anchor any, params map[
 	level := globalConfig.Load().resolveLevel(scopeName)
 	if level != nil {
 		l = l.Level(*level)
+	} else {
+		le := zerolog.DebugLevel
+		level = &le
 	}
 	e := l.Debug().Str(FieldEvent, "enter")
 	if params != nil {
